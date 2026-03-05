@@ -23,7 +23,7 @@ from reachy_mini_conversation_app.tools.core_tools import (
     get_tool_specs,
     dispatch_tool_call,
 )
-
+from reachy_mini_conversation_app.keyword_router import handle_keyword_command
 
 logger = logging.getLogger(__name__)
 
@@ -334,7 +334,11 @@ class OpenaiRealtimeHandler(AsyncStreamHandler):
                 # Handle completed transcription (user finished speaking)
                 if event.type == "conversation.item.input_audio_transcription.completed":
                     logger.debug(f"User transcript: {event.transcript}")
-
+                    user_text = event.transcript  # 實際欄位依 repo 的 event 結構
+                    # 1) 先做 keyword command
+                    local_resp = handle_keyword_command(user_text, self.deps)
+                    logger.debug(f"local_resp: {local_resp}")
+                    
                     # Cancel any pending partial emission
                     if self.partial_transcript_task and not self.partial_transcript_task.done():
                         self.partial_transcript_task.cancel()
@@ -342,8 +346,19 @@ class OpenaiRealtimeHandler(AsyncStreamHandler):
                             await self.partial_transcript_task
                         except asyncio.CancelledError:
                             pass
-
-                    await self.output_queue.put(AdditionalOutputs({"role": "user", "content": event.transcript}))
+                  """
+                    if local_resp is not None:
+                         # 只把結果顯示在 UI（AdditionalOutputs）或直接忽略
+                        if local_resp.strip():
+                            await self.output_queue.put({
+                                "type": "text",
+                                "role": "assistant",
+                                "text": local_resp,
+                            })
+                        continue
+                   """
+                    if local_resp is None:
+                        await self.output_queue.put(AdditionalOutputs({"role": "user", "content": event.transcript}))
 
                 # Handle assistant transcription
                 if event.type in ("response.audio_transcript.done", "response.output_audio_transcript.done"):
